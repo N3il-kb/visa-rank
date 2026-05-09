@@ -621,6 +621,79 @@ def _try_predict(
         return None
 
 
+def _try_posting(title: Optional[str], description: Optional[str]) -> Optional[dict]:
+    """Run posting_filter.analyze_posting if any text is provided."""
+    if not (title or description):
+        return None
+    try:
+        from posting_filter import analyze_posting
+        return analyze_posting(title or "", description or "")
+    except ImportError:
+        return None
+    except Exception:
+        return None
+
+
+def _apply_posting_override(
+    base_tier: int,
+    base_reason: str,
+    posting: dict,
+    *,
+    source: str,
+) -> tuple[int, str, bool]:
+    """Combine the company-level tier with the posting-level signal.
+
+    Asymmetric on purpose: ``hard_no`` can collapse any tier to 1 (a posting
+    that excludes non-citizens is dispositive regardless of company). But a
+    ``hard_yes`` from a cold-start company can't push past tier 3, since we
+    have no track record to back up the posting's claim.
+
+    Returns (tier, reason, override_applied).
+    """
+    cat = posting["category"]
+    evidence = posting.get("evidence") or []
+    quote = evidence[0] if evidence else ""
+
+    if cat == "hard_no":
+        return 1, (
+            f"Posting excludes sponsorship: {quote}"
+        ), True
+
+    if cat == "soft_no":
+        new_tier = max(1, base_tier - 1)
+        reason = (
+            f"{base_reason} Posting hedges sponsorship: {quote}"
+            if quote else f"{base_reason} Posting hedges sponsorship."
+        )
+        return new_tier, reason, True
+
+    if cat == "hard_yes":
+        # Cold-start cap at 3 (no track record); USCIS-matched can climb to 5.
+        cap = 5 if source == "uscis" else 3
+        new_tier = min(cap, base_tier + 1)
+        if new_tier == base_tier:
+            return base_tier, base_reason, False
+        reason = (
+            f"{base_reason} Posting explicitly offers sponsorship: {quote}"
+            if quote else f"{base_reason} Posting explicitly offers sponsorship."
+        )
+        return new_tier, reason, True
+
+    if cat == "soft_yes":
+        cap = 5 if source == "uscis" else 3
+        new_tier = min(cap, base_tier + 1)
+        if new_tier == base_tier:
+            return base_tier, base_reason, False
+        reason = (
+            f"{base_reason} Posting open to sponsorship: {quote}"
+            if quote else f"{base_reason} Posting open to sponsorship."
+        )
+        return new_tier, reason, True
+
+    # neutral
+    return base_tier, base_reason, False
+
+
 def score_with_cold_start(
     name: str,
     naics: Optional[str] = None,
@@ -643,12 +716,17 @@ def score_with_cold_start(
         prediction  -- predicted probability if the model was used, else None
         match_score -- fuzzy match confidence if matched, else None
     """
+    posting = _try_posting(title, description)
+
     feats = get_company_features(name)
     if feats is not None:
         tier, reason = score_company(feats)
-        # Also run the LR model so callers can see the model's independent
-        # view alongside the data-driven verdict (sanity check / demo signal).
         details = _try_predict(name, naics, state, description, title)
+        override_applied = False
+        if posting is not None:
+            tier, reason, override_applied = _apply_posting_override(
+                tier, reason, posting, source="uscis",
+            )
         return {
             "tier": tier,
             "reason": reason,
@@ -657,18 +735,31 @@ def score_with_cold_start(
             "prediction": details["p_sponsors"] if details else None,
             "model_details": details,
             "match_score": feats["match_score"],
+            "posting_signal": posting,
+            "override_applied": override_applied,
         }
 
     details = _try_predict(name, naics, state, description, title)
     if details is None:
+        # No model and no lookup -- but a kill-switch posting is still
+        # dispositive on its own ("not in our DB but says US-citizens-only"
+        # is still a clear "don't bother").
+        tier, reason = 1, "No matching company found in the USCIS H-1B records."
+        override_applied = False
+        if posting is not None:
+            tier, reason, override_applied = _apply_posting_override(
+                tier, reason, posting, source="none",
+            )
         return {
-            "tier": 1,
-            "reason": "No matching company found in the USCIS H-1B records.",
+            "tier": tier,
+            "reason": reason,
             "source": "none",
             "features": None,
             "prediction": None,
             "model_details": None,
             "match_score": None,
+            "posting_signal": posting,
+            "override_applied": override_applied,
         }
 
     p = details["p_sponsors"]
@@ -691,6 +782,13 @@ def score_with_cold_start(
             f"No direct USCIS record; predictor estimates unlikely sponsor "
             f"(P={p:.2f})."
         )
+
+    override_applied = False
+    if posting is not None:
+        tier, reason, override_applied = _apply_posting_override(
+            tier, reason, posting, source="model",
+        )
+
     return {
         "tier": tier,
         "reason": reason,
@@ -699,6 +797,8 @@ def score_with_cold_start(
         "prediction": p,
         "model_details": details,
         "match_score": None,
+        "posting_signal": posting,
+        "override_applied": override_applied,
     }
 
 
@@ -751,6 +851,17 @@ def _format_verdict(query: str, v: dict) -> str:
             lines.append(f"  state used        : {md['state_used']}")
     else:
         lines.append("  (no match, no model)")
+
+    posting = v.get("posting_signal")
+    if posting is not None and posting.get("category") != "neutral":
+        ev = (posting.get("evidence") or [""])[0]
+        flag = "OVERRIDE" if v.get("override_applied") else "noted"
+        lines.append(
+            f"  posting signal    : {posting['category']:<9} [{flag}]"
+        )
+        if ev:
+            lines.append(f"    evidence        : {ev}")
+
     lines.append(f"  TIER {v['tier']} -- {v['reason']}")
     return "\n".join(lines)
 
