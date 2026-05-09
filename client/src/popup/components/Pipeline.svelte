@@ -20,6 +20,11 @@
 
   const verdictColor = (verdict: string) =>
     verdict === "sponsor" ? "text-green-600" : verdict === "unlikely" ? "text-red-500" : "text-gray-400";
+
+  const onStatusChange = (id: string, e: Event) => {
+    const value = (e.target as HTMLSelectElement).value as PipelineEntry["status"];
+    handleStatusChange(id, value);
+  };
 </script>
 
 <div class="px-4 py-3">
@@ -41,8 +46,7 @@
           <select
             class="w-full text-[10px] border border-gray-200 rounded px-1 py-0.5 mt-1 bg-white"
             value={entry.status}
-            on:change={(e) =>
-              handleStatusChange(entry.id, (e.target as HTMLSelectElement).value as PipelineEntry["status"])}
+            on:change={(e) => onStatusChange(entry.id, e)}
           >
             {#each STATUS_OPTIONS as s}
               <option value={s}>{s}</option>

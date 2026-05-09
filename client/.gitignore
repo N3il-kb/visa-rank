@@ -19,3 +19,6 @@ build/
 
 # type-check cache
 tsconfig.tsbuildinfo
+
+# bun
+bun.lockb

@@ -1,0 +1,46 @@
+{
+  "folders": [
+    { "name": "root", "path": "." },
+    { "name": "client", "path": "client" }
+  ],
+  "settings": {
+    "terminal.integrated.cwd": "${workspaceFolder:client}"
+  },
+  "tasks": {
+    "version": "2.0.0",
+    "tasks": [
+      {
+        "label": "client: dev",
+        "type": "shell",
+        "command": "bun run dev",
+        "options": { "cwd": "${workspaceFolder:client}" },
+        "group": { "kind": "build", "isDefault": true },
+        "isBackground": true,
+        "problemMatcher": "$tsc-watch",
+        "presentation": { "panel": "dedicated", "reveal": "always" }
+      },
+      {
+        "label": "client: build",
+        "type": "shell",
+        "command": "bun run build",
+        "options": { "cwd": "${workspaceFolder:client}" },
+        "group": "build",
+        "presentation": { "panel": "dedicated", "reveal": "always" }
+      },
+      {
+        "label": "backend: start",
+        "type": "shell",
+        "command": "python sponsorship.py",
+        "options": { "cwd": "${workspaceFolder:root}" },
+        "isBackground": true,
+        "presentation": { "panel": "dedicated", "reveal": "always" }
+      },
+      {
+        "label": "dev: all",
+        "dependsOn": ["client: dev", "backend: start"],
+        "dependsOrder": "parallel",
+        "presentation": { "panel": "shared" }
+      }
+    ]
+  }
+}
