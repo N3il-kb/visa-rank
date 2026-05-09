@@ -30,8 +30,8 @@
       {
         "label": "backend: start",
         "type": "shell",
-        "command": "python sponsorship.py",
-        "options": { "cwd": "${workspaceFolder:root}" },
+        "command": ".venv/bin/python app.py",
+        "options": { "cwd": "${workspaceFolder:root}/ML backend" },
         "isBackground": true,
         "presentation": { "panel": "dedicated", "reveal": "always" }
       },

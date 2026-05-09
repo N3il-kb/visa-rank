@@ -10,12 +10,15 @@
 
   type View = "job" | "pipeline";
 
+  const isWindow = new URLSearchParams(window.location.search).get("mode") === "window";
+
   let view: View = "job";
   let jobInfo: JobInfo | null = null;
   let result: AnalysisResponse | null = null;
   let loading = false;
   let checked = false;
   let tracked = false;
+  let fetchError: string | null = null;
 
   const getActiveTabId = (): Promise<number | null> =>
     new Promise((resolve) => {
@@ -29,6 +32,17 @@
     if (!tabId) return null;
     return new Promise((resolve) => {
       chrome.tabs.sendMessage(tabId, { type: "GET_JOB_INFO" }, (resp) => {
+        if (chrome.runtime.lastError) return resolve(null);
+        resolve(resp?.payload ?? null);
+      });
+    });
+  };
+
+  const redetectFromTab = async (): Promise<JobInfo | null> => {
+    const tabId = await getActiveTabId();
+    if (!tabId) return null;
+    return new Promise((resolve) => {
+      chrome.tabs.sendMessage(tabId, { type: "REDETECT" }, (resp) => {
         if (chrome.runtime.lastError) return resolve(null);
         resolve(resp?.payload ?? null);
       });
@@ -70,8 +84,15 @@
     if (!jobInfo) return;
     checked = true;
     loading = true;
-    result = await analyzeJob(jobInfo);
-    loading = false;
+    fetchError = null;
+    try {
+      result = await analyzeJob(jobInfo);
+    } catch (e) {
+      fetchError = e instanceof Error ? e.message : "Failed to reach backend";
+      checked = false;
+    } finally {
+      loading = false;
+    }
   };
 
   const refresh = async () => {
@@ -79,17 +100,46 @@
     if (tabId) chrome.tabs.reload(tabId);
   };
 
+  let retrying = false;
+
   onMount(async () => {
+    // Show cached result immediately (may be stale/partial).
     jobInfo = await getJobFromTab();
     if (jobInfo) tracked = await isTracked(jobInfo.url);
+
+    // Always redetect in the background — content script scores completeness
+    // and only updates if the fresh read has more data than the cached one.
+    // Poll up to 8 times so we also cover the "opened too early" case.
+    retrying = !jobInfo;
+    for (let i = 0; i < 8; i++) {
+      await new Promise((r) => setTimeout(r, 750));
+      const fresh = await redetectFromTab();
+      if (fresh) {
+        jobInfo = fresh;
+        if (!tracked) tracked = await isTracked(fresh.url);
+        retrying = false;
+        break;
+      }
+    }
+    retrying = false;
   });
 </script>
 
-<div class="w-[480px] min-h-[440px] bg-[#0f1021] font-sans text-sm text-slate-100 flex flex-col">
-  <Header {view} on:change={(e) => (view = e.detail)} />
+<div class="w-[480px] min-h-[440px] h-full bg-[#0f1021] font-sans text-sm text-slate-100 flex flex-col">
+  <Header {view} {isWindow} on:change={(e) => (view = e.detail)} />
 
   {#if view === "pipeline"}
     <Pipeline />
+
+  {:else if retrying}
+    <div class="px-4 py-8 text-center flex flex-col items-center gap-3">
+      <div class="flex justify-center gap-1">
+        {#each [0, 1, 2] as i}
+          <span class="w-1.5 h-1.5 rounded-full bg-slate-500 animate-bounce" style="animation-delay: {i * 0.15}s"></span>
+        {/each}
+      </div>
+      <p class="text-slate-500 text-xs">Waiting for page to load…</p>
+    </div>
 
   {:else if !jobInfo}
     <div class="px-4 py-8 text-center flex flex-col items-center gap-3">
@@ -105,6 +155,11 @@
 
   {:else if !checked}
     <div class="px-4 py-5 flex flex-col gap-3">
+      {#if fetchError}
+        <div class="bg-red-950/40 border border-red-800/50 rounded-xl px-3 py-2 text-xs text-red-400">
+          {fetchError}
+        </div>
+      {/if}
       <!-- Detected job card -->
       <div class="bg-[#1e2038] border border-[#2a2d4a] rounded-xl p-3.5">
         <p class="text-sm leading-tight">

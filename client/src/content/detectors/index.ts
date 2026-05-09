@@ -4,6 +4,8 @@ import { isGreenhouse, extractGreenhouse } from "./greenhouse";
 import { isLever, extractLever } from "./lever";
 import { isLinkedIn, extractLinkedIn } from "./linkedin";
 import { isIcims, extractIcims } from "./icims";
+import { isPhenom, isPhenomHost, extractPhenom } from "./phenom";
+import { isAvature, extractAvature } from "./avature";
 
 export const detectJob = (): JobInfo | null => {
   let partial: Partial<JobInfo> | null = null;
@@ -13,6 +15,9 @@ export const detectJob = (): JobInfo | null => {
   else if (isLever()) partial = extractLever();
   else if (isLinkedIn()) partial = extractLinkedIn();
   else if (isIcims()) partial = extractIcims();
+  // Avature before Phenom — Avature uses a reliable meta tag, no ambiguity.
+  else if (isAvature()) partial = extractAvature();
+  else if (isPhenomHost() || isPhenom()) partial = extractPhenom();
 
   if (!partial) return null;
 

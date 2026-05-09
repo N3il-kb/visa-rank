@@ -12,6 +12,8 @@ export type Platform =
   | "linkedin"
   | "indeed"
   | "icims"
+  | "phenom"
+  | "avature"
   | "unknown";
 
 export interface JobInfo {

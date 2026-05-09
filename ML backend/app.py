@@ -37,7 +37,13 @@ MODEL_PATH = PROJECT_ROOT / "sponsorship_model.joblib"
 # Tier -> sponsorScore (0-100)
 TIER_TO_SCORE = {5: 90, 4: 70, 3: 50, 2: 25, 1: 5}
 # Tier -> verdict
-TIER_TO_VERDICT = {5: "sponsor", 4: "sponsor", 3: "unknown", 2: "unlikely", 1: "unlikely"}
+TIER_TO_VERDICT = {
+    5: "sponsor",
+    4: "sponsor",
+    3: "unknown",
+    2: "unlikely",
+    1: "unlikely",
+}
 
 # "San Francisco, CA" -> "CA". Also handles trailing parens like
 # "Austin, TX (On-site)" or "Seattle, WA · United States".
@@ -47,17 +53,22 @@ _STATE_RE = re.compile(r",\s*([A-Z]{2})\b")
 app = Flask(__name__)
 CORS(
     app,
-    resources={r"/api/*": {"origins": [
-        "chrome-extension://*",
-        "http://localhost:*",
-        "http://127.0.0.1:*",
-    ]}},
+    resources={
+        r"/api/*": {
+            "origins": [
+                "chrome-extension://*",
+                "http://localhost:*",
+                "http://127.0.0.1:*",
+            ]
+        }
+    },
 )
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _extract_state(location: str) -> Optional[str]:
     if not location:
@@ -74,12 +85,14 @@ def _build_h1b_history(features: Optional[dict]) -> list[dict]:
     for year, counts in sorted(features["per_year"].items()):
         approved = sum(v for k, v in counts.items() if k.endswith("_approval"))
         denied = sum(v for k, v in counts.items() if k.endswith("_denial"))
-        out.append({
-            "year": int(year),
-            "approved": int(approved),
-            "denied": int(denied),
-            "initialApprovals": int(counts.get("new_emp_approval", 0)),
-        })
+        out.append(
+            {
+                "year": int(year),
+                "approved": int(approved),
+                "denied": int(denied),
+                "initialApprovals": int(counts.get("new_emp_approval", 0)),
+            }
+        )
     return out
 
 
@@ -109,6 +122,7 @@ def _to_company_analysis(verdict: dict, fallback_company: str) -> dict:
 # Endpoints
 # ---------------------------------------------------------------------------
 
+
 @app.get("/api/health")
 def health():
     db_rows = None
@@ -122,12 +136,14 @@ def health():
     except Exception:
         pass
 
-    return jsonify({
-        "ok": db_ok,
-        "db_rows": db_rows,
-        "model_loaded": MODEL_PATH.exists(),
-        "schema_version": SCHEMA_VERSION,
-    })
+    return jsonify(
+        {
+            "ok": db_ok,
+            "db_rows": db_rows,
+            "model_loaded": MODEL_PATH.exists(),
+            "schema_version": SCHEMA_VERSION,
+        }
+    )
 
 
 @app.post("/api/analyze")
@@ -182,4 +198,4 @@ def server_error(_):
 if __name__ == "__main__":
     # debug=False so we don't reload the model on every code change in
     # this directory; toggle to True if you want autoreload.
-    app.run(host="127.0.0.1", port=8000, debug=False)
+    app.run(host="127.0.0.1", port=8000, debug=True)

@@ -12,6 +12,8 @@
     "*://www.indeed.com/*",
     "*://job-boards.greenhouse.io/*",
     "*://*.icims.com/*",
+    "*://*.phenompeople.com/*",
+    "*://careers.ibm.com/*",
     "http://localhost:8000/*",
     "http://127.0.0.1:8000/*"
   ],
@@ -44,6 +46,14 @@
       "matches": ["*://*.icims.com/*"],
       "js": ["src/content/content.ts"],
       "all_frames": true,
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "*://*.phenompeople.com/*",
+        "*://careers.ibm.com/*"
+      ],
+      "js": ["src/content/content.ts"],
       "run_at": "document_idle"
     }
   ],
