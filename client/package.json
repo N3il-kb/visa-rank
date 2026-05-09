@@ -1,0 +1,25 @@
+{
+  "name": "visa-filter",
+  "version": "0.1.0",
+  "description": "Browser extension for international students — flags jobs by real H1B sponsorship history before you apply",
+  "scripts": {
+    "dev": "vite build --watch",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "svelte": "^4.2.18"
+  },
+  "devDependencies": {
+    "@crxjs/vite-plugin": "^2.0.0-beta.26",
+    "@sveltejs/vite-plugin-svelte": "^3.1.1",
+    "@types/chrome": "^0.0.268",
+    "autoprefixer": "^10.4.19",
+    "postcss": "^8.4.40",
+    "svelte-check": "^3.8.4",
+    "tailwindcss": "^3.4.7",
+    "tslib": "^2.6.3",
+    "typescript": "^5.5.3",
+    "vite": "^5.3.4"
+  }
+}

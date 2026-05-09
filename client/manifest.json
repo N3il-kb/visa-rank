@@ -1,0 +1,46 @@
+{
+  "manifest_version": 3,
+  "name": "Visa Filter",
+  "version": "0.1.0",
+  "description": "Know before you apply — real H1B sponsorship data, ATS-safe autofill, and pipeline tracking for international students.",
+  "permissions": ["activeTab", "storage", "scripting"],
+  "host_permissions": [
+    "*://*.myworkdayjobs.com/*",
+    "*://boards.greenhouse.io/*",
+    "*://jobs.lever.co/*",
+    "*://www.linkedin.com/jobs/*",
+    "*://www.indeed.com/*",
+    "*://job-boards.greenhouse.io/*"
+  ],
+  "action": {
+    "default_popup": "src/popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "src/background/background.ts",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.myworkdayjobs.com/*",
+        "*://boards.greenhouse.io/*",
+        "*://job-boards.greenhouse.io/*",
+        "*://jobs.lever.co/*",
+        "*://www.linkedin.com/jobs/*",
+        "*://www.indeed.com/*"
+      ],
+      "js": ["src/content/content.ts"],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
