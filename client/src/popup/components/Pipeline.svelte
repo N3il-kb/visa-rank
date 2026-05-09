@@ -18,8 +18,15 @@
     "applied", "screening", "interviewing", "offer", "rejected", "ghosted",
   ];
 
-  const verdictColor = (verdict: string) =>
-    verdict === "sponsor" ? "text-green-600" : verdict === "unlikely" ? "text-red-500" : "text-gray-400";
+  const verdictDot = (verdict: string) =>
+    verdict === "sponsor" ? "bg-emerald-400" : verdict === "unlikely" ? "bg-red-400" : "bg-slate-500";
+
+  const statusColor = (status: PipelineEntry["status"]) => {
+    if (status === "offer") return "text-emerald-400";
+    if (status === "rejected" || status === "ghosted") return "text-red-400";
+    if (status === "interviewing") return "text-[#5865f2]";
+    return "text-slate-400";
+  };
 
   const onStatusChange = (id: string, e: Event) => {
     const value = (e.target as HTMLSelectElement).value as PipelineEntry["status"];
@@ -27,33 +34,37 @@
   };
 </script>
 
-<div class="px-4 py-3">
+<div class="px-4 py-3 flex flex-col gap-2.5">
   {#if entries.length === 0}
-    <p class="text-xs text-gray-400 text-center py-4">No applications tracked yet.</p>
-  {:else}
-    <div class="flex flex-col gap-3">
-      {#each entries as entry}
-        <div class="border border-gray-100 rounded-lg p-3">
-          <div class="flex justify-between items-start mb-1">
-            <div>
-              <p class="font-medium text-xs leading-tight">{entry.jobInfo.company}</p>
-              <p class="text-gray-400 text-[10px]">{entry.jobInfo.title}</p>
-            </div>
-            <span class="text-[10px] font-medium {verdictColor(entry.analysis.verdict)}">
-              {entry.analysis.sponsorScore}/100
-            </span>
-          </div>
-          <select
-            class="w-full text-[10px] border border-gray-200 rounded px-1 py-0.5 mt-1 bg-white"
-            value={entry.status}
-            on:change={(e) => onStatusChange(entry.id, e)}
-          >
-            {#each STATUS_OPTIONS as s}
-              <option value={s}>{s}</option>
-            {/each}
-          </select>
-        </div>
-      {/each}
+    <div class="py-8 text-center">
+      <p class="text-slate-500 text-xs">No applications tracked yet.</p>
+      <p class="text-slate-600 text-[10px] mt-1">Check a job and click "Track this application".</p>
     </div>
+  {:else}
+    {#each entries as entry}
+      <div class="bg-[#1e2038] border border-[#2a2d4a] rounded-xl p-3">
+        <div class="flex justify-between items-start mb-2">
+          <div class="flex items-center gap-1.5">
+            <span class="w-1.5 h-1.5 rounded-full shrink-0 {verdictDot(entry.analysis.verdict)}"></span>
+            <div>
+              <p class="font-medium text-xs text-slate-100 leading-tight">{entry.jobInfo.company}</p>
+              <p class="text-slate-500 text-[10px]">{entry.jobInfo.title}</p>
+            </div>
+          </div>
+          <span class="text-[10px] font-semibold text-slate-500 shrink-0">
+            {entry.analysis.sponsorScore}/100
+          </span>
+        </div>
+        <select
+          class="w-full text-[10px] border border-[#2a2d4a] rounded-lg px-2 py-1 bg-[#13141f] {statusColor(entry.status)} focus:outline-none focus:border-[#5865f2]"
+          value={entry.status}
+          on:change={(e) => onStatusChange(entry.id, e)}
+        >
+          {#each STATUS_OPTIONS as s}
+            <option value={s} class="text-slate-100 bg-[#1e2038]">{s.charAt(0).toUpperCase() + s.slice(1)}</option>
+          {/each}
+        </select>
+      </div>
+    {/each}
   {/if}
 </div>

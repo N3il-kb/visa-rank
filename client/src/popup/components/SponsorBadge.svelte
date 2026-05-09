@@ -5,18 +5,18 @@
   export let score: number;
 
   const config = {
-    sponsor: { label: "Sponsors", bg: "bg-green-100", text: "text-green-700", dot: "bg-green-500" },
-    unlikely: { label: "Unlikely", bg: "bg-red-100", text: "text-red-700", dot: "bg-red-500" },
-    unknown: { label: "Unknown", bg: "bg-gray-100", text: "text-gray-600", dot: "bg-gray-400" },
+    sponsor:  { label: "Sponsors",  bg: "bg-emerald-900/40", text: "text-emerald-400", dot: "bg-emerald-400", border: "border-emerald-800" },
+    unlikely: { label: "Unlikely",  bg: "bg-red-900/40",     text: "text-red-400",     dot: "bg-red-400",     border: "border-red-900"   },
+    unknown:  { label: "Unknown",   bg: "bg-slate-800/60",   text: "text-slate-400",   dot: "bg-slate-500",   border: "border-slate-700" },
   } as const;
 
   $: c = config[verdict];
 </script>
 
 <div class="flex flex-col items-end gap-1 shrink-0">
-  <span class="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium {c.bg} {c.text}">
+  <span class="flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-semibold border {c.bg} {c.text} {c.border}">
     <span class="w-1.5 h-1.5 rounded-full {c.dot}"></span>
     {c.label}
   </span>
-  <span class="text-xs text-gray-400">{score}/100</span>
+  <span class="text-[10px] text-slate-500">{score}/100</span>
 </div>
