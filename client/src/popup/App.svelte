@@ -17,12 +17,23 @@
   let checked = false;
   let tracked = false;
 
-  const getJobFromTab = (): Promise<JobInfo | null> =>
+  const getActiveTabId = (): Promise<number | null> =>
     new Promise((resolve) => {
-      chrome.runtime.sendMessage({ type: "GET_JOB_INFO" }, (resp) => {
+      chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
+        resolve(tab?.id ?? null);
+      });
+    });
+
+  const getJobFromTab = async (): Promise<JobInfo | null> => {
+    const tabId = await getActiveTabId();
+    if (!tabId) return null;
+    return new Promise((resolve) => {
+      chrome.tabs.sendMessage(tabId, { type: "GET_JOB_INFO" }, (resp) => {
+        if (chrome.runtime.lastError) return resolve(null);
         resolve(resp?.payload ?? null);
       });
     });
+  };
 
   const autofill = (fieldType: "authorized" | "sponsorship" | "visa_type") => {
     chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
@@ -43,6 +54,18 @@
     tracked = true;
   };
 
+  const quickTrack = async () => {
+    if (!jobInfo || tracked) return;
+    await addEntry({
+      id: crypto.randomUUID(),
+      jobInfo,
+      analysis: { company: jobInfo.company, sponsorScore: 0, verdict: "unknown", h1bHistory: [], notes: "" },
+      appliedAt: new Date().toISOString(),
+      status: "applied",
+    });
+    tracked = true;
+  };
+
   const checkVisaFit = async () => {
     if (!jobInfo) return;
     checked = true;
@@ -51,32 +74,44 @@
     loading = false;
   };
 
+  const refresh = async () => {
+    const tabId = await getActiveTabId();
+    if (tabId) chrome.tabs.reload(tabId);
+  };
+
   onMount(async () => {
     jobInfo = await getJobFromTab();
     if (jobInfo) tracked = await isTracked(jobInfo.url);
   });
 </script>
 
-<div class="w-[480px] min-h-48 bg-[#0f1021] font-sans text-sm text-slate-100 flex flex-col">
+<div class="w-[480px] min-h-[440px] bg-[#0f1021] font-sans text-sm text-slate-100 flex flex-col">
   <Header {view} on:change={(e) => (view = e.detail)} />
 
   {#if view === "pipeline"}
     <Pipeline />
 
   {:else if !jobInfo}
-    <div class="px-4 py-8 text-center">
-      <div class="text-2xl mb-2">🔍</div>
+    <div class="px-4 py-8 text-center flex flex-col items-center gap-3">
+      <div class="text-2xl">🔍</div>
       <p class="text-slate-400 text-xs leading-relaxed">
         Open a job posting on Workday, Greenhouse,<br/>Lever, LinkedIn, or Indeed.
       </p>
+      <button
+        on:click={refresh}
+        class="text-[11px] text-slate-600 hover:text-slate-400 underline underline-offset-2 transition-colors"
+      >Not showing up? Click to refresh</button>
     </div>
 
   {:else if !checked}
     <div class="px-4 py-5 flex flex-col gap-3">
       <!-- Detected job card -->
       <div class="bg-[#1e2038] border border-[#2a2d4a] rounded-xl p-3.5">
-        <p class="font-semibold text-sm text-slate-100 leading-tight">{jobInfo.company}</p>
-        <p class="text-slate-400 text-xs mt-0.5">{jobInfo.title}</p>
+        <p class="text-sm leading-tight">
+          <span class="font-semibold text-slate-100">{jobInfo.company}</span>
+          <span class="text-slate-600 mx-1.5">|</span>
+          <span class="text-slate-400">{jobInfo.title}</span>
+        </p>
         <p class="text-slate-500 text-xs mt-1">
           {jobInfo.isRemote ? "Remote" : jobInfo.location}
           {#if jobInfo.platform !== "unknown"}
@@ -89,6 +124,13 @@
         class="w-full py-2.5 rounded-xl text-xs font-semibold bg-[#5865f2] hover:bg-[#4752c4] text-white transition-colors duration-150"
       >
         Check Visa Fit
+      </button>
+      <button
+        on:click={quickTrack}
+        disabled={tracked}
+        class="w-full py-2 rounded-xl text-xs font-medium transition-colors duration-150 {tracked ? 'bg-emerald-900/40 text-emerald-400 border border-emerald-800 cursor-default' : 'bg-[#1e2038] border border-[#2a2d4a] text-slate-400 hover:border-[#5865f2] hover:text-slate-200'}"
+      >
+        {tracked ? "✓ Already tracked" : "Quick track (no analysis)"}
       </button>
     </div>
 
@@ -110,8 +152,11 @@
     <div class="px-4 pt-4 pb-3">
       <div class="flex items-start justify-between gap-2">
         <div>
-          <p class="font-semibold text-sm text-slate-100 leading-tight">{result.jobInfo.company}</p>
-          <p class="text-slate-400 text-xs mt-0.5">{result.jobInfo.title}</p>
+          <p class="text-sm leading-tight">
+            <span class="font-semibold text-slate-100">{result.jobInfo.company}</span>
+            <span class="text-slate-600 mx-1.5">|</span>
+            <span class="text-slate-400">{result.jobInfo.title}</span>
+          </p>
           <p class="text-slate-500 text-xs mt-0.5">
             {result.jobInfo.isRemote ? "Remote" : result.jobInfo.location}
             · <span class="capitalize">{result.jobInfo.platform}</span>

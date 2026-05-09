@@ -56,6 +56,11 @@ chrome.runtime.onMessage.addListener((msg: MessageType, _sender, sendResponse) =
     sendResponse({ type: "JOB_INFO_RESPONSE", payload: currentJob });
   }
 
+  if (msg.type === "REDETECT") {
+    loadAndBroadcast().then(() => sendResponse({ payload: currentJob }));
+    return true;
+  }
+
   if (msg.type === "AUTOFILL_REQUESTED") {
     const success = autofillField(msg.payload.fieldType);
     sendResponse({ success });

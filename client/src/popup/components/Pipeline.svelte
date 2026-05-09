@@ -61,6 +61,11 @@
     entries = entries.filter((e) => e.id !== selected!.id);
     back();
   };
+
+  const quickDelete = async (id: string) => {
+    await removeEntry(id);
+    entries = entries.filter((e) => e.id !== id);
+  };
 </script>
 
 {#if selected}
@@ -93,8 +98,11 @@
       <!-- Header -->
       <div class="flex items-start justify-between gap-2">
         <div>
-          <p class="font-semibold text-sm text-slate-100 leading-tight">{selected.jobInfo.company}</p>
-          <p class="text-slate-400 text-xs mt-0.5">{selected.jobInfo.title}</p>
+          <p class="text-sm leading-tight">
+            <span class="font-semibold text-slate-100">{selected.jobInfo.company}</span>
+            <span class="text-slate-600 mx-1.5">|</span>
+            <span class="text-slate-400">{selected.jobInfo.title}</span>
+          </p>
           <p class="text-slate-500 text-[10px] mt-1">Tracking since {fmt(selected.appliedAt)}</p>
         </div>
         <SponsorBadge verdict={selected.analysis.verdict} score={selected.analysis.sponsorScore} />
@@ -180,25 +188,39 @@
       </div>
     {:else}
       {#each entries as entry}
-        <button
-          on:click={() => openDetail(entry)}
-          class="w-full text-left bg-[#1e2038] border border-[#2a2d4a] rounded-xl p-3 hover:border-[#5865f2]/50 transition-colors"
-        >
-          <div class="flex justify-between items-start mb-2">
-            <div class="flex items-center gap-1.5 min-w-0">
+        <div class="relative bg-[#1e2038] border border-[#2a2d4a] rounded-xl p-3 hover:border-[#5865f2]/50 transition-colors group">
+          <!-- clickable body -->
+          <button
+            on:click={() => openDetail(entry)}
+            class="w-full text-left"
+          >
+            <div class="flex items-center gap-1.5 min-w-0 pr-6 mb-1.5">
               <span class="w-1.5 h-1.5 rounded-full shrink-0 {verdictDot(entry.analysis.verdict)}"></span>
-              <div class="min-w-0">
-                <p class="font-medium text-xs text-slate-100 leading-tight truncate">{entry.jobInfo.company}</p>
-                <p class="text-slate-500 text-[10px] truncate">{entry.jobInfo.title}</p>
-              </div>
+              <p class="text-xs leading-tight truncate whitespace-nowrap">
+                <span class="font-medium text-slate-100">{entry.jobInfo.company}</span>
+                <span class="text-slate-600 mx-1">|</span>
+                <span class="text-slate-400">{entry.jobInfo.title}</span>
+              </p>
             </div>
-            <span class="text-[10px] text-slate-500 shrink-0 ml-2">{entry.analysis.sponsorScore}/100</span>
-          </div>
-          <div class="flex items-center justify-between">
-            <span class="text-[10px] {statusColor(entry.status)} capitalize">{entry.status}</span>
-            <span class="text-[10px] text-slate-600">{fmt(entry.appliedAt)}</span>
-          </div>
-        </button>
+            <div class="flex items-center justify-between pl-3">
+              <span class="text-[10px] {statusColor(entry.status)} capitalize">{entry.status}</span>
+              <span class="text-[10px] text-slate-600">
+                {#if entry.analysis.sponsorScore > 0}H1B {entry.analysis.sponsorScore} · {/if}{fmt(entry.appliedAt)}
+              </span>
+            </div>
+          </button>
+          <!-- trash -->
+          <button
+            on:click|stopPropagation={() => quickDelete(entry.id)}
+            title="Remove"
+            class="absolute top-2.5 right-2.5 text-slate-700 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
+          >
+            <svg width="13" height="13" viewBox="0 0 15 15" fill="none">
+              <path d="M5.5 1.5h4M2 3.5h11M3.5 3.5l.9 9a1 1 0 0 0 1 .9h4.2a1 1 0 0 0 1-.9l.9-9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M6 6.5v4M9 6.5v4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </div>
       {/each}
     {/if}
   </div>

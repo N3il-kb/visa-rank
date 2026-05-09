@@ -11,6 +11,7 @@ export type Platform =
   | "lever"
   | "linkedin"
   | "indeed"
+  | "icims"
   | "unknown";
 
 export interface JobInfo {
@@ -48,6 +49,7 @@ export interface AnalysisResponse {
 export type MessageType =
   | { type: "JOB_DETECTED"; payload: JobInfo }
   | { type: "GET_JOB_INFO" }
+  | { type: "REDETECT" }
   | { type: "JOB_INFO_RESPONSE"; payload: JobInfo | null }
   | { type: "AUTOFILL_REQUESTED"; payload: { fieldType: WorkAuthFieldType } };
 

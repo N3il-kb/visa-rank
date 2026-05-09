@@ -10,7 +10,8 @@
     "*://jobs.lever.co/*",
     "*://www.linkedin.com/jobs/*",
     "*://www.indeed.com/*",
-    "*://job-boards.greenhouse.io/*"
+    "*://job-boards.greenhouse.io/*",
+    "*://*.icims.com/*"
   ],
   "action": {
     "default_popup": "src/popup/popup.html",
@@ -35,6 +36,12 @@
         "*://www.indeed.com/*"
       ],
       "js": ["src/content/content.ts"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["*://*.icims.com/*"],
+      "js": ["src/content/content.ts"],
+      "all_frames": true,
       "run_at": "document_idle"
     }
   ],
