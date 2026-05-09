@@ -1,0 +1,39 @@
+# virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# env files
+.env
+.env.local
+.env.*.local
+
+# database
+*.db
+*.sqlite3
+
+# ML artifacts
+*.pkl
+*.joblib
+*.h5
+*.pt
+*.pth
+models/
+checkpoints/
+
+# editor
+.idea/
+.vscode/
