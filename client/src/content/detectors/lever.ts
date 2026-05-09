@@ -19,11 +19,14 @@ export const extractLever = (): Partial<JobInfo> => {
 
   const locationText = locationEl?.innerText?.trim() ?? "";
 
+  const descEl = document.querySelector<HTMLElement>(".posting-description");
+
   return {
     platform: "lever",
     company: toTitleCase(company),
     title: titleEl?.innerText?.trim() ?? "",
     location: locationText,
     isRemote: /remote/i.test(locationText),
+    description: descEl?.innerText?.trim() ?? "",
   };
 };

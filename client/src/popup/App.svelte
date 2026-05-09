@@ -13,7 +13,7 @@
   let jobInfo: JobInfo | null = null;
   let result: AnalysisResponse | null = null;
   let loading = false;
-  let error: string | null = null;
+  let checked = false;
 
   const getJobFromTab = (): Promise<JobInfo | null> =>
     new Promise((resolve) => {
@@ -44,18 +44,16 @@
     alert("Tracked in pipeline!");
   };
 
+  const checkVisaFit = async () => {
+    if (!jobInfo) return;
+    checked = true;
+    loading = true;
+    result = await analyzeJob(jobInfo);
+    loading = false;
+  };
+
   onMount(async () => {
     jobInfo = await getJobFromTab();
-    if (!jobInfo) return;
-
-    loading = true;
-    try {
-      result = await analyzeJob(jobInfo);
-    } catch (e) {
-      error = e instanceof Error ? e.message : "Unknown error";
-    } finally {
-      loading = false;
-    }
   });
 </script>
 
@@ -84,12 +82,23 @@
     <div class="px-4 py-6 text-center text-gray-400 text-xs">
       Open a job posting on Workday, Greenhouse, Lever, or LinkedIn.
     </div>
+  {:else if !checked}
+    <!-- Job detected — waiting for user to initiate the check -->
+    <div class="px-4 py-4">
+      <p class="font-semibold text-sm leading-tight">{jobInfo.company}</p>
+      <p class="text-gray-500 text-xs mt-0.5">{jobInfo.title}</p>
+      <p class="text-gray-400 text-xs mt-0.5">{jobInfo.isRemote ? "Remote" : jobInfo.location}</p>
+      <button
+        on:click={checkVisaFit}
+        class="mt-4 w-full py-2 rounded-lg text-xs font-semibold bg-indigo-600 text-white hover:bg-indigo-700 transition-colors"
+      >
+        Check Visa Fit
+      </button>
+    </div>
   {:else if loading}
     <div class="px-4 py-6 text-center text-gray-400 text-xs animate-pulse">
-      Looking up {jobInfo.company}…
+      Checking {jobInfo.company}…
     </div>
-  {:else if error}
-    <div class="px-4 py-4 text-xs text-red-600">{error}</div>
   {:else if result}
     <!-- Company header -->
     <div class="px-4 pt-4 pb-2">

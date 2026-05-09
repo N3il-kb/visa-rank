@@ -13,6 +13,7 @@ export interface JobInfo {
   isRemote: boolean;
   platform: Platform;
   url: string;
+  description: string;
 }
 
 export interface H1BRecord {

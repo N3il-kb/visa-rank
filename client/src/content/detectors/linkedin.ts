@@ -19,11 +19,16 @@ export const extractLinkedIn = (): Partial<JobInfo> => {
 
   const locationText = locationEl?.innerText?.trim() ?? "";
 
+  const descEl = document.querySelector<HTMLElement>(
+    ".jobs-description__content, .description__text"
+  );
+
   return {
     platform: "linkedin",
     company: companyEl?.innerText?.trim() ?? "",
     title: titleEl?.innerText?.trim() ?? "",
     location: locationText,
     isRemote: /remote/i.test(locationText),
+    description: descEl?.innerText?.trim() ?? "",
   };
 };

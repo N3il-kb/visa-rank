@@ -18,11 +18,16 @@ export const extractGreenhouse = (): Partial<JobInfo> => {
   const locationEl = document.querySelector<HTMLElement>(".location");
   const locationText = locationEl?.innerText?.trim() ?? "";
 
+  const descEl =
+    document.querySelector<HTMLElement>("#content .job__description") ??
+    document.querySelector<HTMLElement>(".job-description");
+
   return {
     platform: "greenhouse",
     company: toTitleCase(company),
     title: titleEl?.innerText?.trim() ?? "",
     location: locationText,
     isRemote: /remote/i.test(locationText),
+    description: descEl?.innerText?.trim() ?? "",
   };
 };

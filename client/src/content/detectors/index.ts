@@ -21,5 +21,6 @@ export const detectJob = (): JobInfo | null => {
     isRemote: partial.isRemote ?? false,
     platform: partial.platform ?? "unknown",
     url: location.href,
+    description: partial.description ?? "",
   };
 };

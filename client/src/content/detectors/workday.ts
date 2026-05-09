@@ -17,6 +17,10 @@ export const extractWorkday = (): Partial<JobInfo> => {
     '[data-automation-id="locations"]'
   );
 
+  const descEl =
+    document.querySelector<HTMLElement>('[data-automation-id="jobPostingDescription"]') ??
+    document.querySelector<HTMLElement>('[data-automation-id="richTextEditor"]');
+
   const locationText = locationEl?.innerText?.trim() ?? "";
 
   return {
@@ -25,5 +29,6 @@ export const extractWorkday = (): Partial<JobInfo> => {
     title: titleEl?.innerText?.trim() ?? "",
     location: locationText,
     isRemote: /remote/i.test(locationText),
+    description: descEl?.innerText?.trim() ?? "",
   };
 };
