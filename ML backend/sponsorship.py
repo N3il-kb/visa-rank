@@ -598,26 +598,115 @@ def score_company(features: Optional[dict]) -> tuple[int, str]:
 # Cold-start fallback (sponsorship_model.py)
 # ---------------------------------------------------------------------------
 
-def _try_predict(name: str, naics: Optional[str], state: Optional[str]) -> Optional[float]:
-    """Return P(sponsors) from the LR model, or None if it can't load.
-
-    Lazy-imported so the lookup-only path stays free of sklearn/pandas.
+def _try_predict(
+    name: str,
+    naics: Optional[str],
+    state: Optional[str],
+    description: Optional[str] = None,
+    title: Optional[str] = None,
+) -> Optional[dict]:
+    """Return the full predict_with_details dict, or None if the model
+    isn't available. Lazy-imported so the lookup-only path stays free of
+    sklearn/pandas.
     """
     try:
-        from sponsorship_model import predict_sponsorship_probability
-        return predict_sponsorship_probability(name, naics=naics, state=state)
+        from sponsorship_model import predict_with_details
+        return predict_with_details(
+            name, naics=naics, state=state,
+            description=description, title=title,
+        )
     except (ImportError, FileNotFoundError):
         return None
     except Exception:
         return None
 
 
+def _try_posting(title: Optional[str], description: Optional[str]) -> Optional[dict]:
+    """Run posting_filter.analyze_posting if any text is provided."""
+    if not (title or description):
+        return None
+    try:
+        from posting_filter import analyze_posting
+        return analyze_posting(title or "", description or "")
+    except ImportError:
+        return None
+    except Exception:
+        return None
+
+
+def _apply_posting_override(
+    base_tier: int,
+    base_reason: str,
+    posting: dict,
+    *,
+    source: str,
+) -> tuple[int, str, bool]:
+    """Combine the company-level tier with the posting-level signal.
+
+    Asymmetric on purpose: ``hard_no`` can collapse any tier to 1 (a posting
+    that excludes non-citizens is dispositive regardless of company). But a
+    ``hard_yes`` from a cold-start company can't push past tier 3, since we
+    have no track record to back up the posting's claim.
+
+    Returns (tier, reason, override_applied).
+    """
+    cat = posting["category"]
+    evidence = posting.get("evidence") or []
+    quote = evidence[0] if evidence else ""
+
+    if cat == "hard_no":
+        return 1, (
+            f"Posting excludes sponsorship: {quote}"
+        ), True
+
+    if cat == "soft_no":
+        new_tier = max(1, base_tier - 1)
+        reason = (
+            f"{base_reason} Posting hedges sponsorship: {quote}"
+            if quote else f"{base_reason} Posting hedges sponsorship."
+        )
+        return new_tier, reason, True
+
+    if cat == "hard_yes":
+        # Cold-start cap at 3 (no track record); USCIS-matched can climb to 5.
+        cap = 5 if source == "uscis" else 3
+        new_tier = min(cap, base_tier + 1)
+        if new_tier == base_tier:
+            return base_tier, base_reason, False
+        reason = (
+            f"{base_reason} Posting explicitly offers sponsorship: {quote}"
+            if quote else f"{base_reason} Posting explicitly offers sponsorship."
+        )
+        return new_tier, reason, True
+
+    if cat == "soft_yes":
+        cap = 5 if source == "uscis" else 3
+        new_tier = min(cap, base_tier + 1)
+        if new_tier == base_tier:
+            return base_tier, base_reason, False
+        reason = (
+            f"{base_reason} Posting open to sponsorship: {quote}"
+            if quote else f"{base_reason} Posting open to sponsorship."
+        )
+        return new_tier, reason, True
+
+    # neutral
+    return base_tier, base_reason, False
+
+
 def score_with_cold_start(
     name: str,
     naics: Optional[str] = None,
     state: Optional[str] = None,
+    description: Optional[str] = None,
+    title: Optional[str] = None,
 ) -> dict:
     """Full pipeline: USCIS lookup first, fall back to LR predictor.
+
+    The `description` / `title` are used by the LR model to impute a NAICS
+    code via the keyword dictionary (sponsorship_model.NAICS_KEYWORDS) when
+    the caller doesn't pass an explicit `naics`. The lookup path ignores
+    them.
 
     Returns a dict the Flask layer can hand to the extension directly:
         tier        -- 1..5
@@ -627,29 +716,53 @@ def score_with_cold_start(
         prediction  -- predicted probability if the model was used, else None
         match_score -- fuzzy match confidence if matched, else None
     """
+    posting = _try_posting(title, description)
+
     feats = get_company_features(name)
     if feats is not None:
         tier, reason = score_company(feats)
+        details = _try_predict(name, naics, state, description, title)
+        override_applied = False
+        if posting is not None:
+            tier, reason, override_applied = _apply_posting_override(
+                tier, reason, posting, source="uscis",
+            )
         return {
             "tier": tier,
             "reason": reason,
             "source": "uscis",
             "features": feats,
-            "prediction": None,
+            "prediction": details["p_sponsors"] if details else None,
+            "model_details": details,
             "match_score": feats["match_score"],
+            "posting_signal": posting,
+            "override_applied": override_applied,
         }
 
-    p = _try_predict(name, naics, state)
-    if p is None:
+    details = _try_predict(name, naics, state, description, title)
+    if details is None:
+        # No model and no lookup -- but a kill-switch posting is still
+        # dispositive on its own ("not in our DB but says US-citizens-only"
+        # is still a clear "don't bother").
+        tier, reason = 1, "No matching company found in the USCIS H-1B records."
+        override_applied = False
+        if posting is not None:
+            tier, reason, override_applied = _apply_posting_override(
+                tier, reason, posting, source="none",
+            )
         return {
-            "tier": 1,
-            "reason": "No matching company found in the USCIS H-1B records.",
+            "tier": tier,
+            "reason": reason,
             "source": "none",
             "features": None,
             "prediction": None,
+            "model_details": None,
             "match_score": None,
+            "posting_signal": posting,
+            "override_applied": override_applied,
         }
 
+    p = details["p_sponsors"]
     # The LR's held-out AUC is ~0.57 — modest. Cap cold-start verdicts at
     # tier 3 so we don't overclaim from a weak signal.
     if p >= 0.60:
@@ -669,13 +782,23 @@ def score_with_cold_start(
             f"No direct USCIS record; predictor estimates unlikely sponsor "
             f"(P={p:.2f})."
         )
+
+    override_applied = False
+    if posting is not None:
+        tier, reason, override_applied = _apply_posting_override(
+            tier, reason, posting, source="model",
+        )
+
     return {
         "tier": tier,
         "reason": reason,
         "source": "model",
         "features": None,
         "prediction": p,
+        "model_details": details,
         "match_score": None,
+        "posting_signal": posting,
+        "override_applied": override_applied,
     }
 
 
@@ -697,20 +820,48 @@ DEMO_NAMES = [
 def _format_verdict(query: str, v: dict) -> str:
     lines = [f"\nQuery: {query!r}  [source={v['source']}]"]
     feats = v.get("features")
+    md = v.get("model_details")
     if feats is not None:
-        lines.append(f"  matched     : {feats['matched_name']}")
-        lines.append(f"  match score : {feats['match_score']:.1f}")
-        lines.append(f"  years       : {feats['years']}")
-        lines.append(f"  new H-1B    : {feats['new_visa_hires']}")
-        lines.append(f"  continuations: {feats['continuations']}")
-        lines.append(f"  amendments  : {feats['amendments']}")
-        lines.append(f"  total approvals: {feats['total_approvals']}")
+        lines.append(f"  matched           : {feats['matched_name']}")
+        lines.append(f"  name-match conf   : {feats['match_score']:.0f}%")
+        lines.append(f"  years             : {feats['years']}")
+        lines.append(f"  new H-1B hires    : {feats['new_visa_hires']}")
+        lines.append(f"  continuations     : {feats['continuations']}")
+        lines.append(f"  amendments        : {feats['amendments']}")
+        lines.append(f"  total approvals   : {feats['total_approvals']}")
         if feats.get("trend"):
-            lines.append(f"  trend       : {feats['trend']}")
+            lines.append(f"  trend             : {feats['trend']}")
+        if v.get("prediction") is not None:
+            lines.append(
+                f"  model P(sponsors) : {v['prediction']:.3f}  "
+                f"(independent LR estimate; data above is authoritative)"
+            )
     elif v["prediction"] is not None:
-        lines.append(f"  P(sponsors) : {v['prediction']:.3f}  (cold-start model)")
+        lines.append(
+            f"  model P(sponsors) : {v['prediction']:.3f}  "
+            f"(cold-start LR -- no USCIS record for this company)"
+        )
+        if md:
+            tag = (
+                f"NAICS {md['naics_used']} ({md['naics_source']})"
+            )
+            if md.get("naics_evidence"):
+                tag += f" via [{', '.join(md['naics_evidence'])}]"
+            lines.append(f"  industry inferred : {tag}")
+            lines.append(f"  state used        : {md['state_used']}")
     else:
         lines.append("  (no match, no model)")
+
+    posting = v.get("posting_signal")
+    if posting is not None and posting.get("category") != "neutral":
+        ev = (posting.get("evidence") or [""])[0]
+        flag = "OVERRIDE" if v.get("override_applied") else "noted"
+        lines.append(
+            f"  posting signal    : {posting['category']:<9} [{flag}]"
+        )
+        if ev:
+            lines.append(f"    evidence        : {ev}")
+
     lines.append(f"  TIER {v['tier']} -- {v['reason']}")
     return "\n".join(lines)
 
@@ -721,13 +872,36 @@ def main(argv: list[str]) -> int:
         print(f"Loaded {n} (company, fiscal_year) rows into {DB_PATH}")
         return 0
 
+    # Strip optional flags (--state X, --jd X, --title X) out of argv; the
+    # remainder is the positional company-name list. We're hand-parsing here
+    # rather than reaching for argparse so the bare `python sponsorship.py
+    # "Stripe" "Amazon" ...` form keeps working unchanged.
+    args = argv[1:]
+    state = jd = title = None
+    positional: list[str] = []
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "--state" and i + 1 < len(args):
+            state = args[i + 1]
+            i += 2
+        elif a in ("--jd", "--description") and i + 1 < len(args):
+            jd = args[i + 1]
+            i += 2
+        elif a == "--title" and i + 1 < len(args):
+            title = args[i + 1]
+            i += 2
+        else:
+            positional.append(a)
+            i += 1
+
     n = ingest(force=False)
     if n:
         print(f"[ingest] populated DB with {n} (company, fiscal_year) rows")
 
-    queries = argv[1:] if len(argv) > 1 else DEMO_NAMES
+    queries = positional or DEMO_NAMES
     for q in queries:
-        v = score_with_cold_start(q)
+        v = score_with_cold_start(q, state=state, description=jd, title=title)
         print(_format_verdict(q, v))
     return 0
 
