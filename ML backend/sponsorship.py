@@ -598,14 +598,23 @@ def score_company(features: Optional[dict]) -> tuple[int, str]:
 # Cold-start fallback (sponsorship_model.py)
 # ---------------------------------------------------------------------------
 
-def _try_predict(name: str, naics: Optional[str], state: Optional[str]) -> Optional[float]:
-    """Return P(sponsors) from the LR model, or None if it can't load.
-
-    Lazy-imported so the lookup-only path stays free of sklearn/pandas.
+def _try_predict(
+    name: str,
+    naics: Optional[str],
+    state: Optional[str],
+    description: Optional[str] = None,
+    title: Optional[str] = None,
+) -> Optional[dict]:
+    """Return the full predict_with_details dict, or None if the model
+    isn't available. Lazy-imported so the lookup-only path stays free of
+    sklearn/pandas.
     """
     try:
-        from sponsorship_model import predict_sponsorship_probability
-        return predict_sponsorship_probability(name, naics=naics, state=state)
+        from sponsorship_model import predict_with_details
+        return predict_with_details(
+            name, naics=naics, state=state,
+            description=description, title=title,
+        )
     except (ImportError, FileNotFoundError):
         return None
     except Exception:
@@ -616,8 +625,15 @@ def score_with_cold_start(
     name: str,
     naics: Optional[str] = None,
     state: Optional[str] = None,
+    description: Optional[str] = None,
+    title: Optional[str] = None,
 ) -> dict:
     """Full pipeline: USCIS lookup first, fall back to LR predictor.
+
+    The `description` / `title` are used by the LR model to impute a NAICS
+    code via the keyword dictionary (sponsorship_model.NAICS_KEYWORDS) when
+    the caller doesn't pass an explicit `naics`. The lookup path ignores
+    them.
 
     Returns a dict the Flask layer can hand to the extension directly:
         tier        -- 1..5
@@ -630,26 +646,32 @@ def score_with_cold_start(
     feats = get_company_features(name)
     if feats is not None:
         tier, reason = score_company(feats)
+        # Also run the LR model so callers can see the model's independent
+        # view alongside the data-driven verdict (sanity check / demo signal).
+        details = _try_predict(name, naics, state, description, title)
         return {
             "tier": tier,
             "reason": reason,
             "source": "uscis",
             "features": feats,
-            "prediction": None,
+            "prediction": details["p_sponsors"] if details else None,
+            "model_details": details,
             "match_score": feats["match_score"],
         }
 
-    p = _try_predict(name, naics, state)
-    if p is None:
+    details = _try_predict(name, naics, state, description, title)
+    if details is None:
         return {
             "tier": 1,
             "reason": "No matching company found in the USCIS H-1B records.",
             "source": "none",
             "features": None,
             "prediction": None,
+            "model_details": None,
             "match_score": None,
         }
 
+    p = details["p_sponsors"]
     # The LR's held-out AUC is ~0.57 — modest. Cap cold-start verdicts at
     # tier 3 so we don't overclaim from a weak signal.
     if p >= 0.60:
@@ -675,6 +697,7 @@ def score_with_cold_start(
         "source": "model",
         "features": None,
         "prediction": p,
+        "model_details": details,
         "match_score": None,
     }
 
@@ -697,18 +720,35 @@ DEMO_NAMES = [
 def _format_verdict(query: str, v: dict) -> str:
     lines = [f"\nQuery: {query!r}  [source={v['source']}]"]
     feats = v.get("features")
+    md = v.get("model_details")
     if feats is not None:
-        lines.append(f"  matched     : {feats['matched_name']}")
-        lines.append(f"  match score : {feats['match_score']:.1f}")
-        lines.append(f"  years       : {feats['years']}")
-        lines.append(f"  new H-1B    : {feats['new_visa_hires']}")
-        lines.append(f"  continuations: {feats['continuations']}")
-        lines.append(f"  amendments  : {feats['amendments']}")
-        lines.append(f"  total approvals: {feats['total_approvals']}")
+        lines.append(f"  matched           : {feats['matched_name']}")
+        lines.append(f"  name-match conf   : {feats['match_score']:.0f}%")
+        lines.append(f"  years             : {feats['years']}")
+        lines.append(f"  new H-1B hires    : {feats['new_visa_hires']}")
+        lines.append(f"  continuations     : {feats['continuations']}")
+        lines.append(f"  amendments        : {feats['amendments']}")
+        lines.append(f"  total approvals   : {feats['total_approvals']}")
         if feats.get("trend"):
-            lines.append(f"  trend       : {feats['trend']}")
+            lines.append(f"  trend             : {feats['trend']}")
+        if v.get("prediction") is not None:
+            lines.append(
+                f"  model P(sponsors) : {v['prediction']:.3f}  "
+                f"(independent LR estimate; data above is authoritative)"
+            )
     elif v["prediction"] is not None:
-        lines.append(f"  P(sponsors) : {v['prediction']:.3f}  (cold-start model)")
+        lines.append(
+            f"  model P(sponsors) : {v['prediction']:.3f}  "
+            f"(cold-start LR -- no USCIS record for this company)"
+        )
+        if md:
+            tag = (
+                f"NAICS {md['naics_used']} ({md['naics_source']})"
+            )
+            if md.get("naics_evidence"):
+                tag += f" via [{', '.join(md['naics_evidence'])}]"
+            lines.append(f"  industry inferred : {tag}")
+            lines.append(f"  state used        : {md['state_used']}")
     else:
         lines.append("  (no match, no model)")
     lines.append(f"  TIER {v['tier']} -- {v['reason']}")
@@ -721,13 +761,36 @@ def main(argv: list[str]) -> int:
         print(f"Loaded {n} (company, fiscal_year) rows into {DB_PATH}")
         return 0
 
+    # Strip optional flags (--state X, --jd X, --title X) out of argv; the
+    # remainder is the positional company-name list. We're hand-parsing here
+    # rather than reaching for argparse so the bare `python sponsorship.py
+    # "Stripe" "Amazon" ...` form keeps working unchanged.
+    args = argv[1:]
+    state = jd = title = None
+    positional: list[str] = []
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "--state" and i + 1 < len(args):
+            state = args[i + 1]
+            i += 2
+        elif a in ("--jd", "--description") and i + 1 < len(args):
+            jd = args[i + 1]
+            i += 2
+        elif a == "--title" and i + 1 < len(args):
+            title = args[i + 1]
+            i += 2
+        else:
+            positional.append(a)
+            i += 1
+
     n = ingest(force=False)
     if n:
         print(f"[ingest] populated DB with {n} (company, fiscal_year) rows")
 
-    queries = argv[1:] if len(argv) > 1 else DEMO_NAMES
+    queries = positional or DEMO_NAMES
     for q in queries:
-        v = score_with_cold_start(q)
+        v = score_with_cold_start(q, state=state, description=jd, title=title)
         print(_format_verdict(q, v))
     return 0
 
