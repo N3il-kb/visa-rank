@@ -1,3 +1,10 @@
+export interface VisaFitRequest {
+  company: string;
+  location: string;
+  role: string;
+  description: string;
+}
+
 export type Platform =
   | "workday"
   | "greenhouse"

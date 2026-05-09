@@ -28,6 +28,6 @@
     <button
       class="px-3 py-1 rounded-md text-xs font-medium transition-all duration-150 {view === 'pipeline' ? 'bg-[#5865f2] text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}"
       on:click={() => dispatch("change", "pipeline")}
-    >Pipeline</button>
+    >Tracking</button>
   </nav>
 </header>

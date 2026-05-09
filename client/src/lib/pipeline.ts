@@ -10,11 +10,24 @@ export async function getPipeline(): Promise<PipelineEntry[]> {
   });
 }
 
-export async function addEntry(entry: PipelineEntry): Promise<void> {
+export async function isTracked(url: string): Promise<boolean> {
+  const entries = await getPipeline();
+  return entries.some((e) => e.jobInfo.url === url);
+}
+
+// Returns false if the job URL is already tracked (dedup by URL).
+export async function addEntry(entry: PipelineEntry): Promise<boolean> {
   const existing = await getPipeline();
-  const deduped = existing.filter((e) => e.id !== entry.id);
+  if (existing.some((e) => e.jobInfo.url === entry.jobInfo.url)) return false;
   return new Promise((resolve) => {
-    chrome.storage.local.set({ [STORAGE_KEY]: [entry, ...deduped] }, resolve);
+    chrome.storage.local.set({ [STORAGE_KEY]: [entry, ...existing] }, () => resolve(true));
+  });
+}
+
+export async function removeEntry(id: string): Promise<void> {
+  const entries = await getPipeline();
+  return new Promise((resolve) => {
+    chrome.storage.local.set({ [STORAGE_KEY]: entries.filter((e) => e.id !== id) }, resolve);
   });
 }
 

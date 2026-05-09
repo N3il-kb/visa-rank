@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import type { JobInfo, AnalysisResponse } from "../lib/types";
   import { analyzeJob } from "../lib/api";
-  import { addEntry } from "../lib/pipeline";
+  import { addEntry, isTracked } from "../lib/pipeline";
   import Header from "./components/Header.svelte";
   import SponsorBadge from "./components/SponsorBadge.svelte";
   import H1BChart from "./components/H1BChart.svelte";
@@ -53,10 +53,11 @@
 
   onMount(async () => {
     jobInfo = await getJobFromTab();
+    if (jobInfo) tracked = await isTracked(jobInfo.url);
   });
 </script>
 
-<div class="w-80 min-h-48 bg-[#0f1021] font-sans text-sm text-slate-100 flex flex-col">
+<div class="w-[480px] min-h-48 bg-[#0f1021] font-sans text-sm text-slate-100 flex flex-col">
   <Header {view} on:change={(e) => (view = e.detail)} />
 
   {#if view === "pipeline"}
