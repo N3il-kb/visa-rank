@@ -2,6 +2,14 @@ import { detectJob } from "./detectors";
 import { autofillField } from "./autofill";
 import type { JobInfo, MessageType } from "../lib/types";
 
+// iCIMS renders the real job DOM inside an iframe (?in_iframe=1). With
+// all_frames: true, this script runs in BOTH the wrapper and the iframe —
+// and chrome.tabs.sendMessage races their responses, so the wrapper's null
+// reply can clobber the iframe's real one. Bail out of the wrapper.
+const isIcimsWrapperFrame =
+  location.hostname.endsWith(".icims.com") &&
+  new URLSearchParams(location.search).get("in_iframe") !== "1";
+
 let currentJob = null as JobInfo | null;
 
 const getWorkdayJobId = (): string | null => {
@@ -47,36 +55,38 @@ const loadAndBroadcast = async () => {
 let lastUrl = location.href;
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
-const observer = new MutationObserver(() => {
-  const urlChanged = location.href !== lastUrl;
-  if (urlChanged) lastUrl = location.href;
+if (!isIcimsWrapperFrame) {
+  const observer = new MutationObserver(() => {
+    const urlChanged = location.href !== lastUrl;
+    if (urlChanged) lastUrl = location.href;
 
-  // Debounce: wait 600ms after DOM settles before re-running detection.
-  // This covers both SPA navigation and async content rendering on the same URL.
-  if (debounceTimer) clearTimeout(debounceTimer);
-  debounceTimer = setTimeout(() => {
-    loadAndBroadcast();
-  }, 600);
-});
+    // Debounce: wait 600ms after DOM settles before re-running detection.
+    // This covers both SPA navigation and async content rendering on the same URL.
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      loadAndBroadcast();
+    }, 600);
+  });
 
-observer.observe(document.body, { childList: true, subtree: true });
+  observer.observe(document.body, { childList: true, subtree: true });
 
-loadAndBroadcast();
+  loadAndBroadcast();
 
-chrome.runtime.onMessage.addListener((msg: MessageType, _sender, sendResponse) => {
-  if (msg.type === "GET_JOB_INFO") {
-    sendResponse({ type: "JOB_INFO_RESPONSE", payload: currentJob });
-  }
+  chrome.runtime.onMessage.addListener((msg: MessageType, _sender, sendResponse) => {
+    if (msg.type === "GET_JOB_INFO") {
+      sendResponse({ type: "JOB_INFO_RESPONSE", payload: currentJob });
+    }
 
-  if (msg.type === "REDETECT") {
-    loadAndBroadcast().then(() => sendResponse({ payload: currentJob }));
+    if (msg.type === "REDETECT") {
+      loadAndBroadcast().then(() => sendResponse({ payload: currentJob }));
+      return true;
+    }
+
+    if (msg.type === "AUTOFILL_REQUESTED") {
+      const success = autofillField(msg.payload.fieldType);
+      sendResponse({ success });
+    }
+
     return true;
-  }
-
-  if (msg.type === "AUTOFILL_REQUESTED") {
-    const success = autofillField(msg.payload.fieldType);
-    sendResponse({ success });
-  }
-
-  return true;
-});
+  });
+}
