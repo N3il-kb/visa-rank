@@ -16,12 +16,13 @@ export const extractAvature = (): Partial<JobInfo> => {
   const company =
     document.querySelector<HTMLMetaElement>('meta[property="og:site_name"]')?.content?.trim() ?? "";
 
-  // Description: collect all field values from the main article sections
-  const descEls = document.querySelectorAll<HTMLElement>(
-    ".grid__item--main .article__content__view__field__value"
-  );
-  const description = Array.from(descEls)
-    .map((el) => el.innerText.trim())
+  // Description: grab text from every <article> on the page. Avature wraps
+  // each panel (main job content + side panels like "Other Relevant Job
+  // Details" where the no-sponsor text lives) in an <article>. Field-value
+  // selectors miss free-form text blocks, so go one level up.
+  const articles = document.querySelectorAll<HTMLElement>("article");
+  const description = Array.from(articles)
+    .map((el) => el.textContent?.replace(/\s+/g, " ").trim() ?? "")
     .filter(Boolean)
     .join("\n\n");
 

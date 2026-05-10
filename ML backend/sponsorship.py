@@ -653,17 +653,25 @@ def _apply_posting_override(
     cat = posting["category"]
     evidence = posting.get("evidence") or []
     quote = evidence[0] if evidence else ""
+    quote_clause = f' ("{quote}")' if quote else ""
 
     if cat == "hard_no":
-        return 1, (
-            f"Posting excludes sponsorship: {quote}"
-        ), True
+        if source == "uscis":
+            # Company has real H1B history, but THIS posting explicitly closes
+            # the door. Surface both facts so the user understands the conflict.
+            reason = (
+                f"Despite past H-1B history — {base_reason.rstrip('.')} — "
+                f"this posting explicitly excludes sponsorship{quote_clause}. "
+                f"Do not apply expecting sponsorship for this role."
+            )
+        else:
+            reason = f"Posting explicitly excludes sponsorship{quote_clause}."
+        return 1, reason, True
 
     if cat == "soft_no":
         new_tier = max(1, base_tier - 1)
         reason = (
-            f"{base_reason} Posting hedges sponsorship: {quote}"
-            if quote else f"{base_reason} Posting hedges sponsorship."
+            f"{base_reason} This posting hedges on sponsorship{quote_clause}."
         )
         return new_tier, reason, True
 

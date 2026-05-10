@@ -49,6 +49,99 @@
     });
   };
 
+  // Fallback when the content script isn't injected (e.g. IBM tab was already
+  // open when the extension was installed/updated). Runs detection inline via
+  // the scripting API — no pre-injected content script required.
+  const detectViaScripting = async (): Promise<JobInfo | null> => {
+    const tabId = await getActiveTabId();
+    if (!tabId) return null;
+    try {
+      const [res] = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: (): JobInfo | null => {
+          const url = location.href;
+          const host = location.hostname;
+          const q = <T extends Element>(sel: string) =>
+            document.querySelector<T>(sel);
+          const qAll = (sel: string) =>
+            Array.from(document.querySelectorAll<HTMLElement>(sel));
+          const txt = (sel: string) =>
+            (q<HTMLElement>(sel))?.innerText?.trim() ?? "";
+          const og = (prop: string) =>
+            (q<HTMLMetaElement>(`meta[property="${prop}"]`))?.content?.trim() ?? "";
+          const joinDesc = (els: HTMLElement[]) =>
+            els.map(e => (e.textContent ?? "").trim()).filter(Boolean).join("\n\n").slice(0, 8000);
+
+          // Avature (careers.ibm.com and others)
+          if (q('meta[name="avature.portal.page"]')) {
+            const loc = txt(".card-item-location");
+            // Grab text from every <article> — covers the main panel AND side
+            // panels like "Other Relevant Job Details" where the no-sponsor
+            // text lives. Field-value selectors miss free-form blocks.
+            const description = Array.from(document.querySelectorAll<HTMLElement>("article"))
+              .map(e => (e.textContent ?? "").replace(/\s+/g, " ").trim())
+              .filter(Boolean)
+              .join("\n\n")
+              .slice(0, 8000);
+            return {
+              platform: "avature" as const,
+              company: og("og:site_name"),
+              title: txt("h2.banner__text__title") || txt("h1"),
+              location: loc,
+              isRemote: /remote/i.test(loc),
+              url, description,
+            };
+          }
+          // Workday
+          if (host.endsWith(".myworkdayjobs.com")) {
+            const loc = txt('[data-automation-id="locations"]');
+            const company = host.split(".")[0]
+              .replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+            const description = joinDesc(
+              qAll('[data-automation-id="jobPostingDescription"] *:not(script)')
+                .filter(el => el.children.length === 0)
+            );
+            return {
+              platform: "workday" as const,
+              company,
+              title: txt('[data-automation-id="jobPostingHeader"]') || txt("h1"),
+              location: loc, isRemote: /remote/i.test(loc), url, description,
+            };
+          }
+          // Greenhouse
+          if (host === "boards.greenhouse.io" || host === "job-boards.greenhouse.io") {
+            const loc = txt(".location");
+            const company = location.pathname.split("/").filter(Boolean)[0]
+              ?.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase()) ?? "";
+            const description = joinDesc(qAll("#content .job-post p, #content .job-post li"));
+            return {
+              platform: "greenhouse" as const,
+              company,
+              title: txt("h1.app-title") || txt("h1"),
+              location: loc, isRemote: /remote/i.test(loc), url, description,
+            };
+          }
+          // Lever
+          if (host === "jobs.lever.co") {
+            const loc = txt(".location, [class*='location']");
+            const company = location.pathname.split("/").filter(Boolean)[0]
+              ?.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase()) ?? "";
+            const description = joinDesc(qAll(".section-wrapper p, .section-wrapper li"));
+            return {
+              platform: "lever" as const, company,
+              title: txt("h2") || txt("h1"),
+              location: loc, isRemote: /remote/i.test(loc), url, description,
+            };
+          }
+          return null;
+        },
+      });
+      return (res?.result as JobInfo | null) ?? null;
+    } catch {
+      return null;
+    }
+  };
+
   const autofill = (fieldType: "authorized" | "sponsorship" | "visa_type") => {
     chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
       if (!tab?.id) return;
@@ -103,16 +196,14 @@
   let retrying = false;
 
   onMount(async () => {
-    // Show cached result immediately (may be stale/partial).
+    // 1. Show whatever the content script already has (may be partial/stale).
     jobInfo = await getJobFromTab();
     if (jobInfo) tracked = await isTracked(jobInfo.url);
 
-    // Always redetect in the background — content script scores completeness
-    // and only updates if the fresh read has more data than the cached one.
-    // Poll up to 8 times so we also cover the "opened too early" case.
+    // 2. Poll via REDETECT — handles "opened too early" on slow/SPA pages.
     retrying = !jobInfo;
-    for (let i = 0; i < 8; i++) {
-      await new Promise((r) => setTimeout(r, 750));
+    for (let i = 0; i < 5; i++) {
+      await new Promise((r) => setTimeout(r, 700));
       const fresh = await redetectFromTab();
       if (fresh) {
         jobInfo = fresh;
@@ -121,6 +212,15 @@
         break;
       }
     }
+
+    // 3. Scripting API fallback — runs inline detection without needing the
+    //    content script to be pre-injected (covers tabs open before extension
+    //    was installed/updated, e.g. IBM on first load).
+    if (!jobInfo) {
+      jobInfo = await detectViaScripting();
+      if (jobInfo) tracked = await isTracked(jobInfo.url);
+    }
+
     retrying = false;
   });
 </script>

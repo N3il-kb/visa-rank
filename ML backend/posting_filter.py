@@ -76,16 +76,25 @@ HARD_NO_PATTERNS: list[tuple[str, re.Pattern]] = [
         r"(?:us\s+)?(?:work\s+)?authoriz\w+"
     )),
     # "...without requiring sponsorship now or in the future"
+    # Also catches "without a need for current or future visa sponsorship" (IBM phrasing)
     ("without_sponsor_clause", _rx(
-        r"\b(?:without|with\s+no|with\s+out)\s+(?:requiring|needing|the\s+need\s+for)?\s*"
+        r"\b(?:without|with\s+no|with\s+out)\s+(?:requiring|needing|(?:a|the)\s+need\s+for)?\s*"
         r"(?:current\s+or\s+future\s+)?(?:visa\s+|h-?1b\s+|employer\s+|company\s+)?sponsorship"
         r"(?:\s+(?:now\s+or\s+in\s+the\s+future|at\s+any\s+time|ever))?"
     )),
-    # "No sponsorship available" / "We do not sponsor"
+    # "must have the ability to work without [a need for] sponsorship" (IBM / Avature phrasing)
+    ("ability_to_work_without_sponsor", _rx(
+        r"\bmust\s+have\s+(?:the\s+)?ability\s+to\s+work\s+"
+        r"(?:in\s+the\s+(?:us|united\s+states)\s+)?"
+        r"without\s+(?:(?:a|the)\s+need\s+for\s+)?(?:current\s+or\s+future\s+)?"
+        r"(?:visa\s+|h-?1b\s+|employer\s+)?sponsor"
+    )),
+    # "No sponsorship available" / "We do not sponsor" / "will not be providing visa sponsorship"
     ("no_sponsorship_explicit", _rx(
         r"\b(?:no|not\s+able\s+to|unable\s+to|cannot|can\s+not|will\s+not|do\s+not|"
         r"does\s+not|we\s+do\s+not|we\s+will\s+not|we\s+cannot)\s+"
-        r"(?:offer\s+|provide\s+|currently\s+offer\s+|currently\s+provide\s+)?"
+        r"(?:be\s+)?"                                             # handles "will not BE providing"
+        r"(?:offer(?:ing)?\s+|provide\s+|providing\s+|currently\s+offer\s+|currently\s+provide\s+)?"
         r"(?:visa\s+|h-?1b\s+|employer\s+|work\s+)?sponsor(?:ship|\b)"
     )),
     ("sponsorship_not_available", _rx(
